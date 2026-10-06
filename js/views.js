@@ -8,6 +8,7 @@ import { parseProgramma } from './programma.js';
 import { prepareFile, getPosition } from './photo.js';
 import { apriPlanimetria, apriFoto, apriDocumento } from './viewers.js';
 import { esportaArchivio } from './export.js';
+import { espandi, abbina, riepilogo as riepDoc, importa as importaDoc } from './bulk.js';
 import { riepilogo, condizioni, eseguiBackup, testConnessione } from './backup.js';
 import { APP_VERSION } from './version.js';
 
@@ -23,6 +24,7 @@ export async function vistaHome() {
   const lastBk = await DB.getMeta('lastBackup', null);
   const server = await DB.getMeta('server', null);
   const inFile = h('input', { type: 'file', accept: '.csv,.json,.txt,text/csv,application/json,text/plain', hidden: true, onchange: e => importaProgramma(e.target.files[0], e.target) });
+  const inDoc = h('input', { type: 'file', multiple: true, accept: 'image/*,application/pdf,.pdf,.zip,application/zip,application/x-zip-compressed', hidden: true, onchange: e => importaDocumenti(e.target.files, e.target) });
 
   const stat = h('section', { class: 'card status' },
     h('div', { class: 'st-main ' + (pendenti ? 'warn' : 'okk') },
@@ -65,6 +67,9 @@ export async function vistaHome() {
         h('button', { class: 'btn', onclick: () => aggiungiImmobile() }, icon('plus', 18), ' Aggiungi immobile'),
         h('button', { class: 'btn', onclick: () => inFile.click() }, icon('file', 18), ' Importa programma'),
         inFile),
+      h('div', { class: 'actions' },
+        h('button', { class: 'btn', disabled: !righe.length, onclick: () => inDoc.click() }, icon('plan', 18), ' Importa planimetrie e visure (in blocco)'),
+        inDoc),
       h('div', { class: 'actions two' },
         h('a', { class: 'btn primary', href: '#/backup' }, icon('cloud', 18), ' Backup di fine giornata'),
         h('button', { class: 'btn', disabled: !righe.length, onclick: e => esporta(e.currentTarget) }, icon('download', 18), ' Esporta archivio')),
@@ -81,6 +86,41 @@ async function esporta(btn, soloImm = null) {
     toast(`Archivio salvato in Download: ${r.nome} (${fmtBytes(r.size)})`, 'ok');
   } catch (e) { toast('Esportazione non riuscita: ' + e.message, 'err'); }
   finally { btn.disabled = false; btn.innerHTML = t; }
+}
+
+async function importaDocumenti(fileList, input) {
+  const scelti = [...fileList]; input.value = '';
+  if (!scelti.length) return;
+  try {
+    toast('Lettura dei file…');
+    const { files, errori } = await espandi(scelti);
+    const imms = await M.listImm();
+    const { abbinati, scartati } = abbina(files, imms.map(i => i.codice));
+    const tutti = [...errori, ...scartati];
+    if (!abbinati.length) {
+      return infoDialog({ title: 'Nessun file abbinato', body: h('div', null,
+        h('p', { class: 'modal-text' }, 'Il nome di ogni file deve iniziare con il codice dell\'immobile, ad esempio IMM-07_planimetria.png.'),
+        tutti.slice(0, 8).map(x => h('p', { class: 'modal-text err' }, `${x.nome}: ${x.motivo}`))) });
+    }
+    const per = riepDoc(abbinati);
+    const righe = Object.keys(per).sort((a, b) => a.localeCompare(b, 'it', { numeric: true })).map(c => {
+      const r = per[c]; const parti = [];
+      if (r.planimetria) parti.push(`${r.planimetria} planimetri${r.planimetria === 1 ? 'a' : 'e'}`);
+      if (r.visura) parti.push(`${r.visura} document${r.visura === 1 ? 'o' : 'i'}`);
+      return h('li', null, h('span', { class: 'code' }, c), ' ', parti.join(', '));
+    });
+    const corpo = h('div', null,
+      h('p', { class: 'modal-text' }, `${abbinati.length} file da importare in ${righe.length} immobili.`),
+      h('ul', { class: 'plainlist', style: 'max-height:34vh;overflow:auto' }, righe),
+      tutti.length ? h('div', null, h('p', { class: 'modal-text err' }, `${tutti.length} file non importati:`),
+        h('ul', { class: 'plainlist miss', style: 'max-height:18vh;overflow:auto' }, tutti.slice(0, 10).map(x => h('li', null, `${x.nome}: ${x.motivo}`)))) : null,
+      h('p', { class: 'hint' }, 'I file con lo stesso nome già presenti per quell\'immobile vengono sostituiti.'));
+    const ok = await modal({ title: 'Importare i documenti?', body: corpo, actions: [{ label: 'Annulla', value: false }, { label: 'Importa', value: true, kind: 'primary' }] });
+    if (!ok) return;
+    const r = await importaDoc(abbinati, (i, n) => toast(`Importazione ${i} di ${n}…`));
+    toast(`Documenti importati: ${r.nuovi} nuovi${r.sostituiti ? ', ' + r.sostituiti + ' sostituiti' : ''}.`, 'ok');
+    stato.rerender();
+  } catch (e) { toast(e.message, 'err'); await infoDialog({ title: 'Importazione non riuscita', body: e.message }); }
 }
 
 async function importaProgramma(file, input) {

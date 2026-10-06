@@ -1,10 +1,10 @@
 // Service worker: rende l'app disponibile senza rete.
 // Per pubblicare una nuova versione: cambiare VERSIONE qui e APP_VERSION in js/version.js.
-const VERSIONE = 'sopralluoghi-1.0.0';
+const VERSIONE = 'sopralluoghi-1.1.0';
 const FILE = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/version.js', 'js/util.js', 'js/db.js', 'js/schema.js', 'js/model.js', 'js/programma.js',
-  'js/flatten.js', 'js/export.js', 'js/zip.js', 'js/photo.js', 'js/backup.js', 'js/ui.js', 'js/viewers.js', 'js/views.js',
+  'js/flatten.js', 'js/bulk.js', 'js/unzip.js', 'js/export.js', 'js/zip.js', 'js/photo.js', 'js/backup.js', 'js/ui.js', 'js/viewers.js', 'js/views.js',
   'fonts/space-grotesk-500.woff2', 'fonts/space-grotesk-600.woff2',
   'fonts/plex-sans-400.woff2', 'fonts/plex-sans-500.woff2', 'fonts/plex-sans-600.woff2',
   'fonts/plex-mono-400.woff2', 'fonts/plex-mono-500.woff2',
