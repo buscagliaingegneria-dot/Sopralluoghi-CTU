@@ -1,6 +1,6 @@
 // Service worker: rende l'app disponibile senza rete.
 // Per pubblicare una nuova versione: cambiare VERSIONE qui e APP_VERSION in js/version.js.
-const VERSIONE = 'sopralluoghi-1.1.0';
+const VERSIONE = 'sopralluoghi-1.1.1';
 const FILE = [
   './', 'index.html', 'styles.css', 'manifest.webmanifest',
   'js/app.js', 'js/version.js', 'js/util.js', 'js/db.js', 'js/schema.js', 'js/model.js', 'js/programma.js',

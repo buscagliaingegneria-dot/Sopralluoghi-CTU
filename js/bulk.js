@@ -13,12 +13,28 @@ const IMG = /\.(png|jpe?g|webp)$/i;
 const PDF = /\.pdf$/i;
 const senzaEstensione = n => n.replace(/\.[^.]+$/, '');
 
-// Espande gli eventuali ZIP in elenco di file singoli.
+// Riconosce il tipo di file dai primi byte: il selettore di Android spesso omette l'estensione dal nome.
+const NO_ZIP = /\.(docx|xlsx|pptx|odt|ods|odp|apk|jar|epub)$/i;
+export async function riconosci(f) {
+  const b = new Uint8Array(await f.slice(0, 12).arrayBuffer());
+  if (b[0] === 0x50 && b[1] === 0x4B && (b[2] === 3 || b[2] === 5) && !NO_ZIP.test(f.name)) return { tipo: 'zip' };
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return { tipo: 'img', ext: 'png', mime: 'image/png' };
+  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return { tipo: 'img', ext: 'jpg', mime: 'image/jpeg' };
+  if (b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return { tipo: 'img', ext: 'webp', mime: 'image/webp' };
+  if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return { tipo: 'pdf', ext: 'pdf', mime: 'application/pdf' };
+  return null;
+}
+
+// Espande gli eventuali ZIP in elenco di file singoli e ripristina estensione e tipo dei file senza.
 export async function espandi(files) {
   const out = [], errori = [];
   for (const f of files) {
-    if (/\.zip$/i.test(f.name) || f.type === 'application/zip' || f.type === 'application/x-zip-compressed') {
+    const k = await riconosci(f);
+    if (k && k.tipo === 'zip') {
       try { out.push(...await unzipFile(f)); } catch (e) { errori.push({ nome: f.name, motivo: e.message }); }
+    } else if (k) {
+      const haExt = /\.[A-Za-z0-9]{2,5}$/.test(f.name);
+      out.push(haExt && f.type === k.mime ? f : new File([f], haExt ? f.name : `${f.name}.${k.ext}`, { type: k.mime }));
     } else out.push(f);
   }
   return { files: out, errori };
