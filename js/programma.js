@@ -57,7 +57,7 @@ export function parseProgramma(testo) {
     });
     return costruisci((!Array.isArray(j) && (j.procedimento || j.proc)) || {}, righe);
   }
-  // CSV: prima riga facoltativa "procedimento;RG 123/2026;Titolo"
+  // CSV: prima riga facoltativa "procedimento;RG 999/2099;Titolo"
   let rows = parseCSV(t);
   let procIn = {};
   if (rows.length && norm(rows[0][0]) === 'procedimento') {

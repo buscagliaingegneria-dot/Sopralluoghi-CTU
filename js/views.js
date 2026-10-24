@@ -131,7 +131,7 @@ async function importaProgramma(file, input) {
     if (prog.errori.length && !prog.immobili.length) return infoDialog({ title: 'File non valido', body: h('div', null, prog.errori.map(e => h('p', { class: 'modal-text' }, e))) });
     const cur = await M.getProc();
     if (!prog.proc.codice) {
-      const c = await promptDialog({ title: 'Codice del procedimento', label: 'Numero di RG o altro riferimento (es. RG 1234/2026)', value: cur ? cur.codice : '', ok: 'Continua' });
+      const c = await promptDialog({ title: 'Codice del procedimento', label: 'Numero di RG o altro riferimento (es. RG 999/2099)', value: cur ? cur.codice : '', ok: 'Continua' });
       if (!c) return; prog.proc.codice = c;
     }
     const corpo = h('div', null,
@@ -164,7 +164,7 @@ function formAnagrafica(titolo, valori) {
 export async function aggiungiImmobile() {
   let proc = await M.getProc();
   if (!proc) {
-    const c = await promptDialog({ title: 'Codice del procedimento', label: 'Numero di RG o altro riferimento (es. RG 1234/2026)', ok: 'Continua' });
+    const c = await promptDialog({ title: 'Codice del procedimento', label: 'Numero di RG o altro riferimento (es. RG 999/2099)', ok: 'Continua' });
     if (!c) return; proc = { codice: c, titolo: '', importato: Date.now() }; await M.setProc(proc);
   }
   const anag = await formAnagrafica('Nuovo immobile', {});
