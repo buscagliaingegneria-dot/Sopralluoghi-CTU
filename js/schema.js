@@ -94,7 +94,7 @@ export const ED_GROUPS = [
     F('asc', 'Ascensore', 'chips', ['Presente', 'Assente', 'N.a.']),
     F('acc', 'Accessibilità', 'chips', ['Senza barriere', 'Con barriere architettoniche', 'N.d.']),
     F('dot', 'Dotazioni condominiali', 'multi', ['Portineria', 'Cortile o giardino', 'Parcheggio', 'Impianto centralizzato', 'Autoclave', 'Videosorveglianza', 'Terrazza comune']),
-    F('edi_st', 'Stato di parti comuni e scale', 'chips', STATO),
+    F('edi_st', 'Stato di parti comuni e scale', 'chips', STATO, { nota: 'Nella versione precedente comprendeva anche la facciata.' }),
   ] },
 ];
 

@@ -99,7 +99,8 @@ export function campo(c, f, onChange) {
   if (c.t === 'chips' || c.t === 'multi') ctl = chips(c, f, onChange);
   else if (c.t === 'area') ctl = h('textarea', { rows: 3, value: f[c.k] || '', oninput: e => { f[c.k] = e.target.value; onChange(c); } });
   else ctl = h('input', { type: 'text', value: f[c.k] || '', autocomplete: 'off', oninput: e => { f[c.k] = e.target.value; onChange(c); } });
-  return h('div', { class: 'field' + (c.t === 'chips' || c.t === 'multi' ? ' field-chips' : '') }, lbl, ctl);
+  return h('div', { class: 'field' + (c.t === 'chips' || c.t === 'multi' ? ' field-chips' : '') }, lbl, ctl,
+    c.nota ? h('p', { class: 'hint nota' }, c.nota) : null);
 }
 
 // Gruppo a fisarmonica con contatore dei campi compilati

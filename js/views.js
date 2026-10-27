@@ -3,7 +3,8 @@ import * as DB from './db.js';
 import * as M from './model.js';
 import { h, toast, fmtBytes, fmtDT, fmtTime, confirmDialog, infoDialog, promptDialog, modal } from './util.js';
 import { icon, appbar, vuoto, barra, chips, campo, gruppo, salva, scaricaSalvataggi, urlBlob, rilasciaUrl, marchio } from './ui.js';
-import { IMM_GROUPS, VERIF_GROUPS, CONCL_GROUPS, AMB_GROUPS, ANAG_FIELDS, TAGS, AMB_TIPICI } from './schema.js';
+import { IMM_GROUPS, ED_GROUPS, VERIF_GROUPS, CONCL_GROUPS, AMB_GROUPS, LEGACY_AMB_GROUPS, hasLegacy, isFilled, ANAG_FIELDS, TAGS, AMB_TIPICI } from './schema.js';
+import { anteprimaRiporto, applicaRiporto } from './migra.js';
 import { parseProgramma } from './programma.js';
 import { prepareFile, getPosition } from './photo.js';
 import { apriPlanimetria, apriFoto, apriDocumento } from './viewers.js';
@@ -177,7 +178,8 @@ export async function aggiungiImmobile() {
 }
 
 // ============================================================ IMMOBILE
-const TABS = [['dati', 'Dati'], ['verifica', 'Verifica'], ['ambienti', 'Ambienti'], ['foto', 'Foto'], ['chiusura', 'Chiusura']];
+const TABS = [['dati', 'Dati'], ['scheda', 'Scheda'], ['verifica', 'Verifica'], ['ambienti', 'Ambienti'], ['foto', 'Foto'], ['chiusura', 'Chiusura']];
+const TABS_TERRENO = ['dati', 'foto', 'chiusura'];
 
 export async function vistaImmobile(immId, tab = 'ambienti') {
   const imm = await M.getImm(immId);
@@ -187,15 +189,19 @@ export async function vistaImmobile(immId, tab = 'ambienti') {
   const ambs = await M.listAmb(imm.id);
   const onImm = () => salva('immobili', imm);
 
+  const terreno = imm.tipo === 'terreno';
+  const ed = await M.getEd(imm.edificio);
+  if (terreno && !TABS_TERRENO.includes(tab)) tab = 'dati';
   let corpo;
   if (tab === 'dati') corpo = await tabDati(imm, onImm);
+  else if (tab === 'scheda') corpo = await tabScheda(imm, ambs, ed, onImm);
   else if (tab === 'verifica') corpo = await tabVerifica(imm, gen, onImm);
   else if (tab === 'foto') corpo = await tabFoto(imm, ambs, gen);
-  else if (tab === 'chiusura') corpo = await tabChiusura(imm, ambs, onImm);
+  else if (tab === 'chiusura') corpo = await tabChiusura(imm, ambs, onImm, ed);
   else corpo = await tabAmbienti(imm, ambs);
 
-  const mancanti = M.immMancanti(imm, ambs).length;
-  const tabbar = h('nav', { class: 'tabbar', 'aria-label': 'Sezioni dell\'immobile' }, TABS.map(([id, l]) =>
+  const mancanti = M.immMancanti(imm, ambs, ed).length;
+  const tabbar = h('nav', { class: 'tabbar', 'aria-label': 'Sezioni dell\'immobile' }, TABS.filter(([id]) => !terreno || TABS_TERRENO.includes(id)).map(([id, l]) =>
     h('a', { href: `#/i/${encodeURIComponent(imm.id)}/${id}`, class: id === tab ? 'on' : '', 'aria-current': id === tab ? 'page' : null }, l,
       id === 'chiusura' && !imm.chiuso && mancanti ? h('i', { class: 'tb-dot' }) : null)));
   return h('div', { class: 'page with-tabs' },
@@ -221,12 +227,105 @@ async function tabDati(imm, onImm) {
       h('div', { class: 'actions two' },
         h('button', { class: 'btn', onclick: () => inPl.click() }, icon('plan', 18), ' Aggiungi planimetria'),
         h('button', { class: 'btn', onclick: () => inVi.click() }, icon('file', 18), ' Aggiungi visura o altro'), inPl, inVi)),
-    ...IMM_GROUPS.map((g, i) => gruppo(g, imm.f, onImm, { aperto: i === 0 })));
+    h('section', { class: 'card' }, h('h2', { class: 'sec inl' }, 'Tipo di immobile'),
+      h('div', { class: 'chips seg' }, [['fabbricato', 'Fabbricato'], ['terreno', 'Terreno']].map(([k, l]) => h('button', { class: 'chip', 'aria-pressed': (imm.tipo || 'fabbricato') === k ? 'true' : 'false',
+        onclick: async () => { if ((imm.tipo || 'fabbricato') === k) return; imm.tipo = k; await salva('immobili', imm, { subito: true }); stato.rerender(); } }, l))),
+      h('p', { class: 'hint' }, 'Per i terreni restano le sole schede Dati, Foto e Chiusura; i contenuti specifici si definiranno più avanti.')));
 }
 async function aggiungiDocs(imm, tipo, input) {
   const files = [...input.files]; input.value = '';
   try { for (const f of files) await M.aggiungiDoc(imm.id, tipo, f); toast(`${files.length} documento/i aggiunto/i`, 'ok'); stato.rerender(); }
   catch (e) { toast('Caricamento non riuscito: ' + e.message, 'err'); }
+}
+
+// ---------------------------------------------------------------- SCHEDA GENERALE E EDIFICIO
+const numeriParticelle = a => new Set((String(a && a.particella || '').match(/\d+/g) || []));
+// confronto di comune e foglio senza distinguere maiuscole e spazi iniziali e finali (i dati salvati non cambiano)
+const pari = (x, y) => String(x || '').trim().toLowerCase() === String(y || '').trim().toLowerCase();
+
+async function sceltaEdificio(imm) {
+  const tutti = await M.listEd(); const mie = numeriParticelle(imm.anag);
+  const righe = [];
+  for (const e of tutti) {
+    if (e.id === imm.edificio) continue;
+    const unita = await M.unitaDi(e.id);
+    const stessa = unita.some(u => [...numeriParticelle(u.anag)].some(n => mie.has(n)) && pari(u.anag.foglio, imm.anag.foglio) && pari(u.anag.comune, imm.anag.comune));
+    righe.push({ e, unita, stessa });
+  }
+  righe.sort((a, b) => Number(b.stessa) - Number(a.stessa));
+  let sel = null; const bottoni = [];
+  const aggiorna = () => bottoni.forEach(([id, b]) => b.setAttribute('aria-pressed', id === sel ? 'true' : 'false'));
+  const voce = (id, titolo, sotto) => { const b = h('button', { type: 'button', class: 'chip choice', 'aria-pressed': 'false', onclick: () => { sel = id; aggiorna(); } }, h('b', null, titolo), sotto ? h('small', null, sotto) : null); bottoni.push([id, b]); return b; };
+  const corpo = h('div', { class: 'choices' },
+    h('p', { class: 'hint' }, 'Associare due immobili allo stesso edificio condivide soltanto i dati dell\'edificio (struttura, facciata, parti comuni). Finiture interne, infissi e impianti restano propri di ciascuna unità.'),
+    voce('nuovo', 'Nuovo edificio', 'Per un immobile che non condivide l\'edificio con altri'),
+    ...righe.map(({ e, unita, stessa }) => voce(e.id, `${e.id} · ${e.nome || 'senza nome'}`, `${unita.map(u => u.codice).join(', ') || 'nessuna unità'}${stessa ? ' · stessa particella' : ''}`)));
+  const r = await modal({ title: 'Associare a un edificio', body: corpo, actions: [{ label: 'Annulla', value: null }, { label: 'Associa', value: () => sel, kind: 'primary' }] });
+  return r;
+}
+
+async function cardEdificio(imm, ed) {
+  if (!ed) {
+    return h('section', { class: 'card' }, h('h2', { class: 'sec inl' }, 'Edificio'),
+      h('p', null, 'Nessun edificio associato. I dati comuni (struttura, facciata, parti comuni) si inseriscono sull\'edificio, una volta sola per tutte le sue unità.'),
+      h('div', { class: 'actions two' },
+        h('button', { class: 'btn primary', onclick: async () => { await M.edificioDi(imm, { crea: true }); stato.rerender(); } }, icon('plus', 18), ' Compila i dati dell\'edificio'),
+        h('button', { class: 'btn', onclick: async () => { const t = await sceltaEdificio(imm); if (!t) return; await M.associaEdificio(imm, t); stato.rerender(); } }, ' Associa a un edificio esistente')));
+  }
+  const unita = await M.unitaDi(ed.id);
+  const altre = unita.filter(u => u.id !== imm.id);
+  const nome = h('input', { type: 'text', value: ed.nome || '', placeholder: 'Nome o indirizzo dell\'edificio', oninput: e => { ed.nome = e.target.value; salva('edifici', ed); } });
+  return h('section', { class: 'card' },
+    h('div', { class: 'imm-top' }, h('span', { class: 'code' }, ed.id), h('h2', { class: 'sec inl', style: 'margin:0' }, 'Edificio')),
+    h('label', { class: 'field' }, h('span', { class: 'lbl' }, 'Nome o indirizzo'), nome),
+    h('p', { class: 'hint' }, altre.length ? `Condiviso con ${altre.map(u => u.codice).join(', ')}. Le modifiche ai dati dell'edificio valgono per tutte le unità; finiture interne, infissi e impianti restano propri di ciascuna.` : 'Al momento questo edificio ha una sola unità.'),
+    h('button', { class: 'btn', onclick: async () => { const t = await sceltaEdificio(imm); if (!t) return; const r = await M.associaEdificio(imm, t); if (r.copiati) toast(`${r.copiati} dati riportati nell'edificio scelto`, 'ok'); stato.rerender(); } }, ' Cambia o associa edificio'));
+}
+
+async function tabScheda(imm, ambs, ed, onImm) {
+  const rip = anteprimaRiporto(imm, ambs);
+  const daRiportare = rip.applicabili.length || rip.conflitti.length;
+  const cardRip = daRiportare ? h('section', { class: 'card notice' },
+    h('div', null, h('b', null, 'Dati per ambiente della versione precedente. '), `${rip.ambientiConDati} ambienti hanno finiture, infissi o impianti rilevati stanza per stanza. Si possono riportare nella scheda generale i valori comuni: i dati per ambiente non vengono cancellati.`),
+    h('button', { class: 'btn primary', onclick: () => riportaValori(imm, ambs, onImm) }, 'Riporta i valori comuni')) : null;
+  const edGruppi = ed ? ED_GROUPS.map((g, i) => gruppo(g, ed.f, () => salva('edifici', ed), { aperto: i === 0 })) : [];
+  return h('div', null,
+    cardRip,
+    await cardEdificio(imm, ed),
+    ed ? null : cardDatiPrecedenti(imm),
+    ...(ed ? [h('h2', { class: 'sec' }, 'Dati dell\'edificio'), ...edGruppi] : []),
+    h('h2', { class: 'sec' }, 'Dati di questa unità'),
+    ...IMM_GROUPS.map((g, i) => gruppo(g, imm.f, onImm, { aperto: i === 0 })));
+}
+
+// Dati d'edificio inseriti sull'immobile con la versione 1.1: visibili in sola lettura finché l'immobile non ha un edificio.
+const CAMPI_PRECEDENTI = ['epoca', 'asc', 'acc', 'dot', 'edi_st'];
+function cardDatiPrecedenti(imm) {
+  const def = Object.fromEntries(ED_GROUPS.flatMap(g => g.campi).map(c => [c.k, c]));
+  const presenti = CAMPI_PRECEDENTI.filter(k => isFilled(imm.f[k]));
+  if (!presenti.length) return null;
+  const val = v => Array.isArray(v) ? v.join(', ') : v;
+  return h('section', { class: 'card legacy' }, h('h2', { class: 'sec inl' }, 'Dati della versione precedente'),
+    h('p', { class: 'hint' }, 'Valori inseriti sulla scheda dell\'immobile prima dell\'introduzione degli edifici. Restano salvati; vengono portati sull\'edificio con «Compila i dati dell\'edificio».'),
+    h('ul', { class: 'plainlist' }, presenti.map(k => h('li', null, h('b', null, def[k].l + ': '), val(imm.f[k]),
+      def[k].nota ? h('span', { class: 'hint' }, ' — ' + def[k].nota) : null))));
+}
+
+async function riportaValori(imm, ambs, onImm) {
+  const rip = anteprimaRiporto(imm, ambs);
+  const val = v => Array.isArray(v) ? v.join(', ') : v;
+  const corpo = h('div', null,
+    h('p', { class: 'modal-text' }, `Valori comuni a tutti gli ambienti rilevati: ${rip.applicabili.length}. Verranno scritti nei campi ancora vuoti della scheda generale.`),
+    h('p', { class: 'hint' }, `L'ambiente ${rip.escluso.codice} (Generale) è escluso dal riporto.`),
+    rip.applicabili.length ? h('ul', { class: 'plainlist', style: 'max-height:26vh;overflow:auto' }, rip.applicabili.map(x => h('li', null, h('b', null, x.l + ': '), val(x.v)))) : null,
+    rip.conflitti.length ? h('div', null, h('p', { class: 'modal-text' }, `Valori diversi da una stanza all'altra (${rip.conflitti.length}): non vengono riportati, vanno scelti a mano.`),
+      h('ul', { class: 'plainlist miss', style: 'max-height:20vh;overflow:auto' }, rip.conflitti.map(x => h('li', null, h('b', null, x.l + ': '), x.valori.join(' / '))))) : null,
+    rip.giaPresenti.length ? h('div', null, h('p', { class: 'modal-text' }, `Campi già compilati, che restano invariati (${rip.giaPresenti.length}):`),
+      h('ul', { class: 'plainlist', style: 'max-height:20vh;overflow:auto' }, rip.giaPresenti.map(x => h('li', null, x.l)))) : null);
+  const ok = await modal({ title: 'Riportare i valori comuni?', body: corpo, actions: [{ label: 'Annulla', value: false }, { label: 'Riporta', value: true, kind: 'primary' }] });
+  if (!ok) return;
+  const n = applicaRiporto(imm, rip); await salva('immobili', imm, { subito: true });
+  toast(`${n} valori riportati nella scheda generale`, 'ok'); stato.rerender();
 }
 
 async function tabVerifica(imm, gen, onImm) {
@@ -274,11 +373,11 @@ async function tabFoto(imm, ambs, gen) {
       h('div', { class: 'thumbs' }, l.map(f => miniatura(f, () => apriFoto(tutte, tutte.indexOf(f), ctx)))))) : vuoto('Nessuna foto', 'Le foto scattate compaiono qui, raggruppate per ambiente.'));
 }
 
-async function tabChiusura(imm, ambs, onImm) {
-  const manc = M.immMancanti(imm, ambs);
+async function tabChiusura(imm, ambs, onImm, ed) {
+  const manc = M.immMancanti(imm, ambs, ed);
   const cont = h('div', { class: 'card' });
   const paint = () => {
-    const m = M.immMancanti(imm, ambs);
+    const m = M.immMancanti(imm, ambs, ed);
     cont.replaceChildren(
       h('h2', { class: 'sec inl' }, imm.chiuso ? (imm.lacune ? 'Immobile chiuso con lacune' : 'Immobile chiuso') : 'Controllo di completezza'),
       m.length ? h('div', null, h('p', null, `Campi obbligatori mancanti: ${m.length}`), h('ul', { class: 'plainlist miss' }, m.slice(0, 20).map(x => h('li', null, x))), m.length > 20 ? h('p', { class: 'hint' }, `… e altri ${m.length - 20}`) : null)
@@ -289,7 +388,7 @@ async function tabChiusura(imm, ambs, onImm) {
         h('button', { class: 'btn', onclick: e => esporta(e.currentTarget, imm.id) }, icon('download', 18), ' Esporta questo immobile')));
   };
   async function chiudi() {
-    const m = M.immMancanti(imm, ambs);
+    const m = M.immMancanti(imm, ambs, ed);
     if (m.length) {
       const r = await modal({
         title: 'Scheda incompleta', body: h('div', null, h('p', { class: 'modal-text' }, `Mancano ${m.length} campi obbligatori:`), h('ul', { class: 'plainlist miss' }, m.slice(0, 12).map(x => h('li', null, x))), m.length > 12 ? h('p', { class: 'hint' }, `… e altri ${m.length - 12}`) : null),
@@ -368,7 +467,9 @@ export async function vistaAmbiente(immId, codice) {
     class: 'chip', 'aria-pressed': amb.stato === k ? 'true' : 'false',
     onclick: async e => { amb.stato = k; [...e.currentTarget.parentNode.children].forEach((b, i) => b.setAttribute('aria-pressed', Object.keys(STATI_AMB)[i] === k ? 'true' : 'false')); await salva('ambienti', amb, { subito: true }); corpoGruppi.classList.toggle('off', k !== 'rilevato'); }
   }, l)));
-  const corpoGruppi = h('div', { class: 'groups' + (amb.stato !== 'rilevato' ? ' off' : '') }, AMB_GROUPS.map((g, i) => gruppo(g, amb.f, onAmb, { aperto: i === 0 })));
+  const legacy = hasLegacy(amb.f) ? h('details', { class: 'group legacy' }, h('summary', null, h('span', { class: 'gtitle' }, 'Rilievo per ambiente (versione precedente)')),
+    h('div', { class: 'gbody' }, h('p', { class: 'hint' }, 'Dati inseriti stanza per stanza prima della scheda generale. Restano salvati e inclusi nel backup.'), ...LEGACY_AMB_GROUPS.map(g => gruppo(g, amb.f, onAmb)))) : null;
+  const corpoGruppi = h('div', { class: 'groups' + (amb.stato !== 'rilevato' ? ' off' : '') }, AMB_GROUPS.map((g, i) => gruppo(g, amb.f, onAmb, { aperto: true })), legacy);
 
   const altre = amb.codice === 'A00' ? null : h('section', { class: 'card' }, h('div', { class: 'actions two' },
     h('button', { class: 'btn', onclick: async () => { const n = await promptDialog({ title: 'Rinomina ambiente', label: 'Nome', value: amb.nome }); if (n) { amb.nome = n; await salva('ambienti', amb, { subito: true }); stato.rerender(); } } }, icon('edit', 18), ' Rinomina'),
@@ -497,7 +598,7 @@ async function chiudiProcedimento() {
   const exp = await DB.getMeta('lastExport', null);
   if (!exp && !await confirmDialog({ title: 'Nessuna copia locale', text: 'Non è mai stato esportato un archivio ZIP. Le foto originali sono solo su questo telefono e nella galleria. Procedere comunque?', ok: 'Procedi' })) return;
   if (!await confirmDialog({ title: 'Svuotare il telefono?', text: 'Schede, foto e documenti del procedimento vengono rimossi da questa app. Operazione non reversibile.', ok: 'Svuota', danger: true })) return;
-  await DB.clearStores(['immobili', 'ambienti', 'foto', 'docs']);
+  await DB.clearStores(['immobili', 'ambienti', 'foto', 'docs', 'edifici']);
   for (const k of ['proc', 'server', 'lastBackup', 'lastExport', 'lastRoute']) await DB.del('meta', k);
   toast('Telefono svuotato', 'ok'); location.hash = '#/';
 }

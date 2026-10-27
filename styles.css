@@ -203,3 +203,13 @@ input:focus, textarea:focus { border-color: var(--clay); }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 @media (min-width: 720px) { .tabbar, .footnav { left: 50%; right: auto; width: 720px; transform: translateX(-50%); } }
+
+/* ---------- versione 1.2: sei schede, scelta dell'edificio ---------- */
+.tabbar a { font-size: 13px; padding: 0 2px; }
+.choices { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow: auto; }
+.chip.choice { display: flex; flex-direction: column; align-items: flex-start; text-align: left; height: auto; padding: 10px 14px; gap: 2px; }
+.chip.choice small { font-size: 13px; opacity: .8; font-weight: 400; }
+.group.legacy { border-style: dashed; }
+.group.legacy .gtitle { color: var(--slate); }
+.card.legacy { border-style: dashed; }
+.field .nota { margin-top: 6px; }

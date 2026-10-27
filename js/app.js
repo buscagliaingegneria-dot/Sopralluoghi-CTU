@@ -25,7 +25,7 @@ async function route() {
   let el, m;
   try {
     if ((m = hash.match(/^#\/i\/([^/]+)\/a\/([^/]+)$/))) el = await V.vistaAmbiente(dec(m[1]), dec(m[2]));
-    else if ((m = hash.match(/^#\/i\/([^/]+?)(?:\/(dati|verifica|ambienti|foto|chiusura))?$/))) el = await V.vistaImmobile(dec(m[1]), m[2] || 'ambienti');
+    else if ((m = hash.match(/^#\/i\/([^/]+?)(?:\/(dati|scheda|verifica|ambienti|foto|chiusura))?$/))) el = await V.vistaImmobile(dec(m[1]), m[2] || 'ambienti');
     else if (hash === '#/backup') el = await V.vistaBackup();
     else if (hash === '#/impostazioni') el = await V.vistaImpostazioni();
     else el = await V.vistaHome();
