@@ -562,8 +562,13 @@ export async function vistaImpostazioni() {
   const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate().catch(() => null) : null;
   const n = { imm: await DB.count('immobili'), amb: await DB.count('ambienti'), foto: await DB.count('foto'), doc: await DB.count('docs') };
   const salvaCfg = async () => { await M.setCfg(cfg); stato.riavvioWake(); };
-  const url = h('input', { type: 'url', value: cfg.scriptUrl, placeholder: 'https://script.google.com/macros/s/…/exec', autocomplete: 'off', oninput: e => { cfg.scriptUrl = e.target.value.trim(); salvaCfg(); } });
-  const tok = h('input', { type: 'password', value: cfg.token, autocomplete: 'off', oninput: e => { cfg.token = e.target.value.trim(); salvaCfg(); } });
+  // Nessun campo di tipo password: il browser non deve proporre di salvare indirizzo e token come credenziali.
+  // Il token è un campo di testo mascherato via CSS, con pulsante per mostrarlo.
+  const noAuto = { autocomplete: 'off', autocapitalize: 'off', autocorrect: 'off', spellcheck: 'false' };
+  const url = h('input', { type: 'url', value: cfg.scriptUrl, placeholder: 'https://script.google.com/macros/s/…/exec', ...noAuto, oninput: e => { cfg.scriptUrl = e.target.value.trim(); salvaCfg(); } });
+  const tokIn = h('input', { type: 'text', class: 'segreto', value: cfg.token, ...noAuto, oninput: e => { cfg.token = e.target.value.trim(); salvaCfg(); } });
+  const tokBtn = h('button', { type: 'button', class: 'btn', onclick: e => { e.preventDefault(); const vis = tokIn.classList.toggle('visibile'); tokBtn.textContent = vis ? 'Nascondi' : 'Mostra'; } }, 'Mostra');
+  const tok = h('div', { class: 'segreto-riga' }, tokIn, tokBtn);
   const esitoTest = h('p', { class: 'hint' });
   const togg = (chiave, etichetta, aiuto) => h('label', { class: 'toggle' }, h('input', { type: 'checkbox', checked: !!cfg[chiave], onchange: e => { cfg[chiave] = e.target.checked; salvaCfg(); } }), h('span', null, h('b', null, etichetta), h('small', null, aiuto)));
   const qual = h('div', { class: 'chips' }, [['ridotta', 'Copia ridotta (2000 px)'], ['originale', 'Originali']].map(([k, l]) => h('button', { class: 'chip', 'aria-pressed': cfg.qualita === k ? 'true' : 'false', onclick: e => { cfg.qualita = k; [...e.currentTarget.parentNode.children].forEach(b => b.setAttribute('aria-pressed', b === e.currentTarget ? 'true' : 'false')); salvaCfg(); } }, l)));

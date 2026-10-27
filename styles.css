@@ -213,3 +213,9 @@ input:focus, textarea:focus { border-color: var(--clay); }
 .group.legacy .gtitle { color: var(--slate); }
 .card.legacy { border-style: dashed; }
 .field .nota { margin-top: 6px; }
+
+/* ---------- Impostazioni: token mascherato senza campo password ---------- */
+.segreto-riga { display: flex; gap: 8px; align-items: stretch; }
+.segreto-riga input { flex: 1; min-width: 0; }
+input.segreto { -webkit-text-security: disc; }
+input.segreto.visibile { -webkit-text-security: none; }
