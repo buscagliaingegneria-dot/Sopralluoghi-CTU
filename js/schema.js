@@ -36,7 +36,7 @@ export const AMB_GROUPS = [
     F('deg_mu', 'Muffe', 'chips', ['Assenti', 'Puntuali', 'Diffuse']),
     F('deg_fe', 'Lesioni e fessurazioni', 'chips', ['Assenti', 'Capillari', 'Evidenti', 'Da approfondire'], { h: 'Fessurazioni' }),
     F('deg_di', 'Distacchi di intonaco', 'chips', ['Assenti', 'Localizzati', 'Estesi']),
-    F('deg_nt', 'Dove e note sul degrado', 'area'),
+    F('deg_nt', 'Dove e note sul degrado', 'area', undefined, { h: 'Dove e note' }),
   ] },
   { id: 'gen', titolo: 'Giudizio sull\'ambiente', campi: [
     F('cons', 'Conservazione complessiva', 'chips', STATO, { req: true }),

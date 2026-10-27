@@ -2,7 +2,7 @@
 // Ogni elemento viene confermato dal server prima di essere segnato come salvato;
 // ripetere il backup invia solo ciò che manca o è cambiato, senza creare doppioni.
 import * as DB from './db.js';
-import { getCfg, getProc, listImm, listAmb, listFoto, sporca, hashImm, hashAmb, hashFoto, nomeFoto } from './model.js';
+import { getCfg, getProc, listImm, listAmb, listFoto, sporca, hashImm, hashAmb, hashFoto, nomeFoto, getEd } from './model.js';
 import { flatImm, flatAmb, flatFoto } from './flatten.js';
 import { serviceCopy, blobToBase64 } from './photo.js';
 import { sha256Hex } from './util.js';
@@ -75,7 +75,7 @@ async function conRiprova(fn, prove = 3) {
 async function marca(store, id, kind, hashInviato, extra = {}) {
   const fresh = await DB.get(store, id);
   if (!fresh) return;
-  const h = kind === 'imm' ? await hashImm(fresh) : kind === 'amb' ? await hashAmb(fresh) : await hashFoto(fresh);
+  const h = kind === 'imm' ? await hashImm(fresh, await getEd(fresh.edificio)) : kind === 'amb' ? await hashAmb(fresh) : await hashFoto(fresh);
   if (h !== hashInviato) return; // modificato durante l'invio: resta da salvare
   fresh.bk = { ...(fresh.bk || {}), h, at: Date.now(), ...extra };
   await DB.put(store, fresh);
@@ -119,12 +119,13 @@ export async function eseguiBackup({ log, progress, annullato }) {
     if (annullato()) throw Object.assign(new Error('Backup interrotto.'), { code: 'STOP' });
     progress(fatti, totale, `Scheda ${imm.codice}`);
     try {
-      const hImm = immSporco ? await hashImm(imm) : null;
+      const ed = await getEd(imm.edificio);
+      const hImm = immSporco ? await hashImm(imm, ed) : null;
       const hAmb = {}; for (const a of ambSporchi) hAmb[a.id] = await hashAmb(a);
       await conRiprova(() => post(cfg, {
         action: 'scheda', proc: proc.codice,
         immobile: { codice: imm.codice, indirizzo: imm.anag.indirizzo || '' },
-        rigaImmobile: immSporco ? flatImm(imm) : null,
+        rigaImmobile: immSporco ? flatImm(imm, ed) : null,
         ambienti: ambSporchi.map(flatAmb),
       }));
       if (immSporco) await marca('immobili', imm.id, 'imm', hImm);
