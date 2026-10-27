@@ -1,6 +1,6 @@
 // Archivio locale (IndexedDB). Tutto il lavoro di campo passa da qui, mai dalla rete.
 const DB_NAME = 'sopralluoghi-ctu';
-const DB_VER = 1;
+const DB_VER = 2;
 let dbp = null;
 
 export function db() {
@@ -19,6 +19,7 @@ export function db() {
           f.createIndex('imm', 'imm'); f.createIndex('amb', 'amb');
           d.createObjectStore('docs', { keyPath: 'id' }).createIndex('imm', 'imm');
         }
+        if (e.oldVersion < 2) d.createObjectStore('edifici', { keyPath: 'id' });
       };
       r.onsuccess = () => {
         r.result.onversionchange = () => r.result.close();
