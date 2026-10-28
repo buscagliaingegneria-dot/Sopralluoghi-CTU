@@ -1,34 +1,47 @@
 // Riporto dei valori rilevati per singolo ambiente (versione 1.1) nella scheda generale dell'immobile (1.2).
-// Non cancella nulla: i dati per ambiente restano consultabili. Il riporto compila solo campi ancora vuoti.
-// L'ambiente A00 (Generale: esterno, accessi, contatori) è escluso: non descrive le finiture interne dell'unità.
+// Non cancella nulla: i dati per ambiente (A00 compreso) restano consultabili. Il riporto compila solo campi ancora vuoti.
+// Per ogni campo: 1) se la scheda ha già un valore, resta invariato; 2) altrimenti vale A00 (Generale) se lo ha compilato, e le altre
+// stanze non si confrontano su quel campo; 3) altrimenti si usano le altre stanze (valori uguali o uniti; i conflitti non si risolvono da soli).
 import { LEGACY_MAP, IMM_GROUPS, isFilled } from './schema.js';
 import { GENERALE } from './model.js';
 
 const DEF = {};
 for (const g of IMM_GROUPS) for (const c of g.campi) DEF[c.k] = c;
 
+const valoriDi = (ambienti, da) => {
+  const vals = [];
+  for (const am of ambienti) {
+    const v = am.f && am.f[da]; if (!isFilled(v)) continue;
+    (Array.isArray(v) ? v : [v]).forEach(x => vals.push(x));
+  }
+  return vals;
+};
+
 export function anteprimaRiporto(imm, ambs) {
-  const ris = { applicabili: [], conflitti: [], giaPresenti: [], ambientiConDati: 0, escluso: GENERALE };
-  const validi = ambs.filter(a => a.stato === 'rilevato' && a.codice !== GENERALE.codice);
-  ris.ambientiConDati = validi.filter(a => LEGACY_MAP.some(([da]) => isFilled(a.f && a.f[da]))).length;
+  const ris = { applicabili: [], conflitti: [], giaPresenti: [], ambientiConDati: 0, daA00: 0 };
+  const attivi = ambs.filter(a => a.stato === 'rilevato' && !a.eliminato);
+  const a00 = attivi.filter(a => a.codice === GENERALE.codice);
+  const stanze = attivi.filter(a => a.codice !== GENERALE.codice);
+  ris.ambientiConDati = stanze.filter(a => LEGACY_MAP.some(([da]) => isFilled(a.f && a.f[da]))).length;
   for (const [da, a] of LEGACY_MAP) {
     const def = DEF[a]; if (!def) continue;
-    const vals = [];
-    for (const am of validi) {
-      const v = am.f && am.f[da]; if (!isFilled(v)) continue;
-      (Array.isArray(v) ? v : [v]).forEach(x => vals.push(x));
-    }
-    if (!vals.length) continue;
+    const valsA00 = valoriDi(a00, da), valsStanze = valoriDi(stanze, da);
+    if (!valsA00.length && !valsStanze.length) continue;
     if (isFilled(imm.f[a])) { ris.giaPresenti.push({ k: a, l: def.l }); continue; }
-    const dist = [...new Set(vals)];
-    if (def.t === 'multi') ris.applicabili.push({ k: a, l: def.l, v: dist });
-    else if (dist.length === 1) ris.applicabili.push({ k: a, l: def.l, v: dist[0] });
-    else ris.conflitti.push({ k: a, l: def.l, valori: dist });
+    const origine = valsA00.length ? 'A00' : 'stanze';
+    const dist = [...new Set(valsA00.length ? valsA00 : valsStanze)];
+    if (def.t === 'multi') ris.applicabili.push({ k: a, l: def.l, v: dist, origine });
+    else if (dist.length === 1) ris.applicabili.push({ k: a, l: def.l, v: dist[0], origine });
+    else ris.conflitti.push({ k: a, l: def.l, valori: dist, origine });
   }
+  ris.daA00 = ris.applicabili.filter(x => x.origine === 'A00').length;
+  if (ris.daA00) ris.ambientiConDati++; // A00 conta tra gli ambienti con dati solo quando contribuisce con almeno un campo riportabile
   return ris;
 }
 
+// Scrive solo nei campi ancora vuoti (anche se nel frattempo sono stati compilati): ripetere il riporto non cambia nulla.
 export function applicaRiporto(imm, rip) {
-  for (const x of rip.applicabili) imm.f[x.k] = x.v;
-  return rip.applicabili.length;
+  let n = 0;
+  for (const x of rip.applicabili) if (!isFilled(imm.f[x.k])) { imm.f[x.k] = Array.isArray(x.v) ? [...x.v] : x.v; n++; }
+  return n;
 }

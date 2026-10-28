@@ -320,7 +320,7 @@ async function tabScheda(imm, ambs, ed, onImm, gen) {
   const rip = anteprimaRiporto(imm, ambs);
   const daRiportare = rip.applicabili.length || rip.conflitti.length;
   const cardRip = daRiportare ? h('section', { class: 'card notice' },
-    h('div', null, h('b', null, 'Dati per ambiente della versione precedente. '), `${rip.ambientiConDati} ambienti hanno finiture, infissi o impianti rilevati stanza per stanza. Si possono riportare nella scheda generale i valori comuni: i dati per ambiente non vengono cancellati.`),
+    h('div', null, h('b', null, 'Dati per ambiente della versione precedente. '), `${rip.ambientiConDati} ambienti hanno finiture, infissi o impianti rilevati stanza per stanza${rip.daA00 ? ' (compreso il Generale, A00)' : ''}. Si possono riportare nella scheda generale i valori comuni: i dati per ambiente non vengono cancellati.`),
     h('button', { class: 'btn primary', onclick: () => riportaValori(imm, ambs, onImm) }, 'Riporta i valori comuni')) : null;
   const edGruppi = ed ? ED_GROUPS.map((g, i) => gruppo(g, ed.f, () => salva('edifici', ed), { aperto: i === 0 })) : [];
   const edGenGruppi = ed ? ED_GEN_GROUPS.map(g => gruppo(g, ed.f, () => salva('edifici', ed), { aperto: true })) : [];
@@ -361,9 +361,9 @@ async function riportaValori(imm, ambs, onImm) {
   const rip = anteprimaRiporto(imm, ambs);
   const val = v => Array.isArray(v) ? v.join(', ') : v;
   const corpo = h('div', null,
-    h('p', { class: 'modal-text' }, `Valori comuni a tutti gli ambienti rilevati: ${rip.applicabili.length}. Verranno scritti nei campi ancora vuoti della scheda generale.`),
-    h('p', { class: 'hint' }, `L'ambiente ${rip.escluso.codice} (Generale) è escluso dal riporto.`),
-    rip.applicabili.length ? h('ul', { class: 'plainlist', style: 'max-height:26vh;overflow:auto' }, rip.applicabili.map(x => h('li', null, h('b', null, x.l + ': '), val(x.v)))) : null,
+    h('p', { class: 'modal-text' }, `Valori da riportare: ${rip.applicabili.length}${rip.daA00 ? ` (${rip.daA00} da A00, ${rip.applicabili.length - rip.daA00} dalle stanze)` : ''}. Verranno scritti nei campi ancora vuoti della scheda generale.`),
+    rip.daA00 ? h('p', { class: 'hint' }, 'Per ogni campo vale prima il valore dell\'ambiente A00 (Generale); le altre stanze si confrontano solo sui campi che A00 lascia vuoti. Gli altri dati di A00 (umidità, degrado, giudizio, note) non si riportano e restano nella scheda «versione precedente».') : null,
+    rip.applicabili.length ? h('ul', { class: 'plainlist', style: 'max-height:26vh;overflow:auto' }, rip.applicabili.map(x => h('li', null, h('b', null, x.l + ': '), val(x.v), h('span', { class: 'hint' }, x.origine === 'A00' ? ' — da A00' : ' — dalle stanze')))) : null,
     rip.conflitti.length ? h('div', null, h('p', { class: 'modal-text' }, `Valori diversi da una stanza all'altra (${rip.conflitti.length}): non vengono riportati, vanno scelti a mano.`),
       h('ul', { class: 'plainlist miss', style: 'max-height:20vh;overflow:auto' }, rip.conflitti.map(x => h('li', null, h('b', null, x.l + ': '), x.valori.join(' / '))))) : null,
     rip.giaPresenti.length ? h('div', null, h('p', { class: 'modal-text' }, `Campi già compilati, che restano invariati (${rip.giaPresenti.length}):`),
@@ -417,7 +417,7 @@ async function tabFoto(imm, ambs, gen, ed) {
     ...(terreno ? [h('h2', { class: 'sec' }, 'Foto del terreno'), await bloccoFoto(imm, gen, {})]
       : ed ? [h('p', { class: 'hint' }, 'Le foto generali (esterno, accessi, contatori) stanno nel riquadro Edificio della scheda, insieme a quelle delle altre unità dello stesso edificio.')]
         : [h('h2', { class: 'sec' }, 'Foto generali (esterno, accessi, contatori)'), await bloccoFoto(imm, gen, {})]),
-    h('h2', { class: 'sec' }, `Tutte le foto (${tutte.length})`),
+    h('h2', { class: 'sec' }, `${terreno ? 'Tutte le foto' : 'Foto degli ambienti'} (${tutte.length})`),
     gruppi.length ? gruppi.map(({ a, l }) => h('section', { class: 'card' }, h('h3', { class: 'sub' }, `${a.codice} · ${a.codice === 'A00' ? 'Generale' : a.nome}`),
       h('div', { class: 'thumbs' }, l.map(f => miniatura(f, () => apriFoto(tutte, tutte.indexOf(f), ctx)))))) : vuoto('Nessuna foto', 'Le foto scattate compaiono qui, raggruppate per ambiente.'));
 }
