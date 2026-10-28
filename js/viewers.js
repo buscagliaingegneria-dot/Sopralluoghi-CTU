@@ -115,7 +115,7 @@ export async function apriFoto(lista, indice, ctx) {
     ambBox.replaceChildren(...ctx.ambs.map(a => h('button', {
       class: 'chip light', 'aria-pressed': f.amb === a.id ? 'true' : 'false',
       onclick: async () => { f.amb = a.id; [...ambBox.children].forEach((b, k) => b.setAttribute('aria-pressed', ctx.ambs[k].id === f.amb ? 'true' : 'false')); await modifica(); }
-    }, `${a.codice} ${a.codice === 'A00' ? 'Generale' : a.nome}`)));
+    }, `${a.codice} ${a.codice === 'A00' ? (ctx.imm.tipo === 'terreno' ? 'Generale' : 'Generali edificio') : a.nome}`)));
     nota.value = f.nota || '';
     nota.oninput = () => { f.nota = nota.value; salva('foto', f); };
   }

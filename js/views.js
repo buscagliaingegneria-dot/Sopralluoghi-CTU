@@ -43,8 +43,7 @@ export async function vistaHome() {
 
   const lista = h('div', { class: 'cards' });
   for (const r of righe) {
-    const ambs = await M.listAmb(r.imm.id);
-    const lavorabili = ambs.filter(a => a.codice !== 'A00');
+    const lavorabili = await M.listAmbVisibili(r.imm.id);
     const compl = lavorabili.filter(M.ambCompleto).length;
     const pct = lavorabili.length ? (compl / lavorabili.length) * 100 : 0;
     lista.append(h('a', { class: 'card imm', href: `#/i/${encodeURIComponent(r.imm.id)}/ambienti` },
@@ -196,9 +195,9 @@ export async function vistaImmobile(immId, tab = 'ambienti') {
   if (tab === 'dati') corpo = await tabDati(imm, onImm);
   else if (tab === 'scheda') corpo = await tabScheda(imm, ambs, ed, onImm, gen);
   else if (tab === 'verifica') corpo = await tabVerifica(imm, onImm);
-  else if (tab === 'foto') corpo = await tabFoto(imm, ambs, gen);
+  else if (tab === 'foto') corpo = await tabFoto(imm, ambs, gen, ed);
   else if (tab === 'chiusura') corpo = await tabChiusura(imm, ambs, onImm, ed);
-  else corpo = await tabAmbienti(imm, ambs);
+  else corpo = await tabAmbienti(imm, ambs.filter(a => a.codice !== M.GENERALE.codice)); // A00 resta in archivio ma non negli elenchi
 
   const mancanti = M.immMancanti(imm, ambs, ed).length;
   const tabbar = h('nav', { class: 'tabbar', 'aria-label': 'Sezioni dell\'immobile' }, TABS.filter(([id]) => !terreno || TABS_TERRENO.includes(id)).map(([id, l]) =>
@@ -329,24 +328,33 @@ async function tabScheda(imm, ambs, ed, onImm, gen) {
   return h('div', null,
     cardRip,
     await cardEdificio(imm, ed),
-    ed ? null : cardDatiPrecedenti(imm),
+    ed ? null : cardDatiPrecedenti(imm, gen, ed), // senza edificio: subito dopo la card; con edificio: in fondo, per non spezzare il riquadro Edificio
     ...(ed ? [h('h2', { class: 'sec' }, 'Foto generali dell\'edificio'), await bloccoFoto(imm, gen, { edificio: ed }),
       h('h2', { class: 'sec' }, 'Dati dell\'edificio'), ...edGenGruppi, ...edGruppi] : []),
     h('h2', { class: 'sec' }, 'Dati di questa unità'),
-    ...IMM_GROUPS.map((g, i) => gruppo(g, imm.f, onImm, { aperto: i === 0 })));
+    ...IMM_GROUPS.map((g, i) => gruppo(g, imm.f, onImm, { aperto: i === 0 })),
+    ed ? cardDatiPrecedenti(imm, gen, ed) : null);
 }
 
 // Dati d'edificio inseriti sull'immobile con la versione 1.1: visibili in sola lettura finché l'immobile non ha un edificio.
 const CAMPI_PRECEDENTI = ['epoca', 'asc', 'acc', 'dot', 'edi_st'];
-function cardDatiPrecedenti(imm) {
+// Mostra anche, in sola lettura e sempre che ci sia almeno un campo compilato, i valori dell'ambiente A00 (Generale) della versione
+// precedente: solo valori, nessuna miniatura e nessun pulsante di modifica (A00 si modifica solo dal link diretto).
+function cardDatiPrecedenti(imm, gen, ed) {
   const def = Object.fromEntries(ED_GROUPS.flatMap(g => g.campi).map(c => [c.k, c]));
-  const presenti = CAMPI_PRECEDENTI.filter(k => isFilled(imm.f[k]));
-  if (!presenti.length) return null;
+  const presenti = ed ? [] : CAMPI_PRECEDENTI.filter(k => isFilled(imm.f[k]));
   const val = v => Array.isArray(v) ? v.join(', ') : v;
+  const valoriA00 = [];
+  for (const g of [...AMB_GROUPS, ...LEGACY_AMB_GROUPS]) for (const c of g.campi) if (gen && isFilled(gen.f[c.k])) valoriA00.push([`${g.titolo}: ${c.l}`, val(gen.f[c.k])]);
+  if (!presenti.length && !valoriA00.length) return null;
   return h('section', { class: 'card legacy' }, h('h2', { class: 'sec inl' }, 'Dati della versione precedente'),
-    h('p', { class: 'hint' }, 'Valori inseriti sulla scheda dell\'immobile prima dell\'introduzione degli edifici. Restano salvati; vengono portati sull\'edificio con «Compila i dati dell\'edificio».'),
-    h('ul', { class: 'plainlist' }, presenti.map(k => h('li', null, h('b', null, def[k].l + ': '), val(imm.f[k]),
-      def[k].nota ? h('span', { class: 'hint' }, ' — ' + def[k].nota) : null))));
+    presenti.length ? h('div', null,
+      h('p', { class: 'hint' }, 'Valori inseriti sulla scheda dell\'immobile prima dell\'introduzione degli edifici. Restano salvati; vengono portati sull\'edificio con «Compila i dati dell\'edificio».'),
+      h('ul', { class: 'plainlist' }, presenti.map(k => h('li', null, h('b', null, def[k].l + ': '), val(imm.f[k]),
+        def[k].nota ? h('span', { class: 'hint' }, ' — ' + def[k].nota) : null)))) : null,
+    valoriA00.length ? h('div', { class: 'a00-prec' },
+      h('p', { class: 'hint' }, `Valori dell'ambiente ${gen.codice} (Generale: esterno, accessi, contatori) inseriti nella versione precedente. Restano salvati e inclusi nel backup. ${ed ? 'Le foto generali stanno nel riquadro Edificio di questa scheda.' : 'Le foto generali stanno nel tab Foto.'}`),
+      h('ul', { class: 'plainlist' }, valoriA00.map(([l, v]) => h('li', null, h('b', null, l + ': '), v)))) : null);
 }
 
 async function riportaValori(imm, ambs, onImm) {
@@ -397,13 +405,18 @@ async function tabAmbienti(imm, ambs) {
       h('button', { class: 'chip', onclick: async () => aggiungi(await promptDialog({ title: 'Nuovo ambiente', label: 'Nome dell\'ambiente', ok: 'Aggiungi' })) }, 'Altro…')));
 }
 
-async function tabFoto(imm, ambs, gen) {
-  const tutte = await M.listFoto(imm.id);
-  const gruppi = ambs.map(a => ({ a, l: tutte.filter(f => f.amb === a.id) })).filter(x => x.l.length);
+async function tabFoto(imm, ambs, gen, ed) {
+  // Le foto A00 si vedono in un solo posto: nel riquadro Edificio della scheda se l'edificio c'è, altrimenti nel blocco di questo tab.
+  // Per i terreni il blocco A00 si intitola «Foto del terreno» e il resto resta come prima.
+  const terreno = imm.tipo === 'terreno';
+  const tuttePrima = await M.listFoto(imm.id);
+  const tutte = terreno ? tuttePrima : tuttePrima.filter(f => f.amb !== gen.id);
+  const gruppi = ambs.filter(a => terreno || a.id !== gen.id).map(a => ({ a, l: tutte.filter(f => f.amb === a.id) })).filter(x => x.l.length);
   const ctx = { imm, ambs, onChange: () => stato.rerender() };
   return h('div', null,
-    h('h2', { class: 'sec' }, 'Foto generali (esterno, accessi, contatori)'),
-    await bloccoFoto(imm, gen, {}),
+    ...(terreno ? [h('h2', { class: 'sec' }, 'Foto del terreno'), await bloccoFoto(imm, gen, {})]
+      : ed ? [h('p', { class: 'hint' }, 'Le foto generali (esterno, accessi, contatori) stanno nel riquadro Edificio della scheda, insieme a quelle delle altre unità dello stesso edificio.')]
+        : [h('h2', { class: 'sec' }, 'Foto generali (esterno, accessi, contatori)'), await bloccoFoto(imm, gen, {})]),
     h('h2', { class: 'sec' }, `Tutte le foto (${tutte.length})`),
     gruppi.length ? gruppi.map(({ a, l }) => h('section', { class: 'card' }, h('h3', { class: 'sub' }, `${a.codice} · ${a.codice === 'A00' ? 'Generale' : a.nome}`),
       h('div', { class: 'thumbs' }, l.map(f => miniatura(f, () => apriFoto(tutte, tutte.indexOf(f), ctx)))))) : vuoto('Nessuna foto', 'Le foto scattate compaiono qui, raggruppate per ambiente.'));
@@ -507,9 +520,9 @@ export async function vistaAmbiente(immId, codice) {
   const imm = await M.getImm(immId);
   const amb = imm && await DB.get('ambienti', M.ambId(immId, codice));
   if (!amb) return vuoto('Ambiente non trovato', 'Tornare alla scheda dell\'immobile.', h('a', { class: 'btn', href: `#/i/${encodeURIComponent(immId)}/ambienti` }, 'Ambienti'));
-  const ambs = await M.listAmb(immId);
+  const ambs = await M.listAmbVisibili(immId); // la navigazione salta A00 (che si apre solo da link diretto: allora succ è il primo ambiente)
   const pos = ambs.findIndex(a => a.id === amb.id);
-  const prec = ambs[pos - 1], succ = ambs[pos + 1];
+  const prec = pos > 0 ? ambs[pos - 1] : undefined, succ = ambs[pos + 1];
   const onAmb = () => salva('ambienti', amb);
   const link = a => `#/i/${encodeURIComponent(immId)}/a/${encodeURIComponent(a.codice)}`;
   const nomeVis = amb.codice === 'A00' ? 'Generale' : amb.nome;

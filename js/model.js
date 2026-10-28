@@ -40,6 +40,10 @@ export async function listAmb(immId, { conEliminati = false } = {}) {
   const l = await DB.byIndex('ambienti', 'imm', immId);
   return l.filter(a => conEliminati || !a.eliminato).sort((a, b) => a.ord - b.ord);
 }
+// Ambienti da mostrare negli elenchi: senza A00 (Generale), che resta in archivio, nel backup e nell'esportazione (listAmb lo include).
+export async function listAmbVisibili(immId, opts) {
+  return (await listAmb(immId, opts)).filter(a => a.codice !== GENERALE.codice);
+}
 export async function ensureGenerale(imm) {
   const id = ambId(imm.id, GENERALE.codice);
   let a = await DB.get('ambienti', id);
