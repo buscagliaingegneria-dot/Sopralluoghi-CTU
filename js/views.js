@@ -3,7 +3,7 @@ import * as DB from './db.js';
 import * as M from './model.js';
 import { h, toast, fmtBytes, fmtDT, fmtTime, confirmDialog, infoDialog, promptDialog, modal } from './util.js';
 import { icon, appbar, vuoto, barra, chips, campo, gruppo, salva, scaricaSalvataggi, urlBlob, rilasciaUrl, marchio } from './ui.js';
-import { IMM_GROUPS, ED_GROUPS, VERIF_GROUPS, CONCL_GROUPS, AMB_GROUPS, LEGACY_AMB_GROUPS, hasLegacy, isFilled, ANAG_FIELDS, TAGS, AMB_TIPICI } from './schema.js';
+import { IMM_GROUPS, ED_GROUPS, ED_GEN_GROUPS, VERIF_GROUPS, CONCL_GROUPS, AMB_GROUPS, LEGACY_AMB_GROUPS, hasLegacy, isFilled, ANAG_FIELDS, TAGS, AMB_TIPICI } from './schema.js';
 import { anteprimaRiporto, applicaRiporto } from './migra.js';
 import { parseProgramma } from './programma.js';
 import { prepareFile, getPosition } from './photo.js';
@@ -194,7 +194,7 @@ export async function vistaImmobile(immId, tab = 'ambienti') {
   if (terreno && !TABS_TERRENO.includes(tab)) tab = 'dati';
   let corpo;
   if (tab === 'dati') corpo = await tabDati(imm, onImm);
-  else if (tab === 'scheda') corpo = await tabScheda(imm, ambs, ed, onImm);
+  else if (tab === 'scheda') corpo = await tabScheda(imm, ambs, ed, onImm, gen);
   else if (tab === 'verifica') corpo = await tabVerifica(imm, onImm);
   else if (tab === 'foto') corpo = await tabFoto(imm, ambs, gen);
   else if (tab === 'chiusura') corpo = await tabChiusura(imm, ambs, onImm, ed);
@@ -264,13 +264,47 @@ async function sceltaEdificio(imm) {
   return r;
 }
 
+// Cambio di edificio: le foto generali (A00) restano all'unità e la seguono. Se l'edificio attuale ha altre unità si chiede conferma.
+async function cambiaEdificio(imm, target) {
+  if (imm.edificio && target !== imm.edificio) {
+    const n = (await M.listFotoAmb(M.ambId(imm.id, M.GENERALE.codice))).length;
+    const altre = (await M.unitaDi(imm.edificio)).filter(u => u.id !== imm.id).length;
+    if (n > 0 && altre > 0) {
+      const ok = await confirmDialog({ title: 'Cambiare edificio?', ok: 'Cambia',
+        text: n === 1 ? 'La foto generale di questa unità la segue nel nuovo edificio; l\'edificio attuale non l\'avrà più.'
+          : `Le ${n} foto generali di questa unità la seguono nel nuovo edificio; l'edificio attuale non le avrà più.` });
+      if (!ok) return null;
+    }
+  }
+  return M.associaEdificio(imm, target);
+}
+// Esito dell'associazione: dati riportati (solo dove già avvisava) e valori diversi accodati alle note generali
+function avvisaAssociazione(r, { riportati = true } = {}) {
+  const parti = [];
+  if (riportati && r.copiati) parti.push(`${r.copiati} dati riportati nell'edificio scelto`);
+  if (r.accodati > 0) parti.push(`${r.accodati} ${r.accodati === 1 ? 'valore diverso accodato' : 'valori diversi accodati'} alle note generali dell'edificio`);
+  if (parti.length) toast(parti.join('. '), 'ok'); // toast() mostra un solo messaggio alla volta
+}
+
+// Visione di una foto di un'altra unità: sola lettura (nessuna modifica, spostamento o eliminazione da questa scheda)
+function apriFotoSolaLettura({ f, unita }) {
+  const ov = h('div', { class: 'viewer photo' },
+    h('div', { class: 'viewer-bar' }, h('div', { class: 'pz-title' }, `${unita} · foto ${String(f.prog).padStart(3, '0')} (sola lettura)`),
+      h('button', { class: 'iconbtn light', 'aria-label': 'Chiudi', onclick: () => ov.remove() }, icon('close'))),
+    h('div', { class: 'ph-stage' }, h('img', { class: 'ph-img', alt: 'Fotografia', src: urlBlob(f.blob) })),
+    h('div', { class: 'ph-panel' }, h('div', { class: 'ph-info' },
+      h('div', null, fmtDT(f.takenAt)), f.tag ? h('div', null, `Etichetta: ${f.tag}`) : null, f.nota ? h('div', null, `Nota: ${f.nota}`) : null,
+      h('div', null, 'Foto di un\'altra unità dello stesso edificio: per modificarla aprire quella unità.'))));
+  document.getElementById('overlay-root').append(ov);
+}
+
 async function cardEdificio(imm, ed) {
   if (!ed) {
     return h('section', { class: 'card' }, h('h2', { class: 'sec inl' }, 'Edificio'),
       h('p', null, 'Nessun edificio associato. I dati comuni (struttura, facciata, parti comuni) si inseriscono sull\'edificio, una volta sola per tutte le sue unità.'),
       h('div', { class: 'actions two' },
         h('button', { class: 'btn primary', onclick: async () => { await M.edificioDi(imm, { crea: true }); stato.rerender(); } }, icon('plus', 18), ' Compila i dati dell\'edificio'),
-        h('button', { class: 'btn', onclick: async () => { const t = await sceltaEdificio(imm); if (!t) return; await M.associaEdificio(imm, t); stato.rerender(); } }, ' Associa a un edificio esistente')));
+        h('button', { class: 'btn', onclick: async () => { const t = await sceltaEdificio(imm); if (!t) return; const r = await cambiaEdificio(imm, t); if (!r) return; avvisaAssociazione(r, { riportati: false }); stato.rerender(); } }, ' Associa a un edificio esistente')));
   }
   const unita = await M.unitaDi(ed.id);
   const altre = unita.filter(u => u.id !== imm.id);
@@ -279,21 +313,25 @@ async function cardEdificio(imm, ed) {
     h('div', { class: 'imm-top' }, h('span', { class: 'code' }, ed.id), h('h2', { class: 'sec inl', style: 'margin:0' }, 'Edificio')),
     h('label', { class: 'field' }, h('span', { class: 'lbl' }, 'Nome o indirizzo'), nome),
     h('p', { class: 'hint' }, altre.length ? `Condiviso con ${altre.map(u => u.codice).join(', ')}. Le modifiche ai dati dell'edificio valgono per tutte le unità; finiture interne, infissi e impianti restano propri di ciascuna.` : 'Al momento questo edificio ha una sola unità.'),
-    h('button', { class: 'btn', onclick: async () => { const t = await sceltaEdificio(imm); if (!t) return; const r = await M.associaEdificio(imm, t); if (r.copiati) toast(`${r.copiati} dati riportati nell'edificio scelto`, 'ok'); stato.rerender(); } }, ' Cambia o associa edificio'));
+    h('p', { class: 'hint' }, `Unità associate nel rilievo: ${unita.map(u => u.codice).join(', ')}.`),
+    h('button', { class: 'btn', onclick: async () => { const t = await sceltaEdificio(imm); if (!t) return; const r = await cambiaEdificio(imm, t); if (!r) return; avvisaAssociazione(r); stato.rerender(); } }, ' Cambia o associa edificio'));
 }
 
-async function tabScheda(imm, ambs, ed, onImm) {
+async function tabScheda(imm, ambs, ed, onImm, gen) {
   const rip = anteprimaRiporto(imm, ambs);
   const daRiportare = rip.applicabili.length || rip.conflitti.length;
   const cardRip = daRiportare ? h('section', { class: 'card notice' },
     h('div', null, h('b', null, 'Dati per ambiente della versione precedente. '), `${rip.ambientiConDati} ambienti hanno finiture, infissi o impianti rilevati stanza per stanza. Si possono riportare nella scheda generale i valori comuni: i dati per ambiente non vengono cancellati.`),
     h('button', { class: 'btn primary', onclick: () => riportaValori(imm, ambs, onImm) }, 'Riporta i valori comuni')) : null;
   const edGruppi = ed ? ED_GROUPS.map((g, i) => gruppo(g, ed.f, () => salva('edifici', ed), { aperto: i === 0 })) : [];
+  const edGenGruppi = ed ? ED_GEN_GROUPS.map(g => gruppo(g, ed.f, () => salva('edifici', ed), { aperto: true })) : [];
+  // con edificio: card, foto generali, dati generali (Generale), dati dell'edificio, poi la unità; senza edificio nessun blocco foto
   return h('div', null,
     cardRip,
     await cardEdificio(imm, ed),
     ed ? null : cardDatiPrecedenti(imm),
-    ...(ed ? [h('h2', { class: 'sec' }, 'Dati dell\'edificio'), ...edGruppi] : []),
+    ...(ed ? [h('h2', { class: 'sec' }, 'Foto generali dell\'edificio'), await bloccoFoto(imm, gen, { edificio: ed }),
+      h('h2', { class: 'sec' }, 'Dati dell\'edificio'), ...edGenGruppi, ...edGruppi] : []),
     h('h2', { class: 'sec' }, 'Dati di questa unità'),
     ...IMM_GROUPS.map((g, i) => gruppo(g, imm.f, onImm, { aperto: i === 0 })));
 }
@@ -405,7 +443,9 @@ function miniatura(f, onclick) {
   return h('button', { class: 'thumb', onclick, 'aria-label': `Foto ${f.prog}` }, h('img', { src: urlBlob(f.thumb), alt: '', loading: 'lazy' }), h('span', { class: 'tn' }, String(f.prog).padStart(3, '0')), f.tag ? h('span', { class: 'tt' }, f.tag) : null);
 }
 
-async function bloccoFoto(imm, amb, { tagIniziale = '' } = {}) {
+// edificio: se presente il blocco mostra le foto generali di tutte le unità dell'edificio (con il codice dell'unità);
+// solo quelle della unità corrente si possono aprire per modificarle, le altre si guardano in sola lettura.
+async function bloccoFoto(imm, amb, { tagIniziale = '', edificio = null } = {}) {
   if (tagIniziale) stato.tag = tagIniziale;
   const box = h('section', { class: 'card photoblock' });
   const ambs = await M.listAmb(imm.id);
@@ -443,8 +483,21 @@ async function bloccoFoto(imm, amb, { tagIniziale = '' } = {}) {
       h('div', { class: 'actions two' },
         h('button', { class: 'btn primary big', onclick: () => inCam.click() }, icon('camera', 22), ' Scatta'),
         h('button', { class: 'btn big', onclick: () => inGal.click() }, icon('image', 22), ' Da galleria'), inCam, inGal),
-      h('div', { class: 'lbl' }, `Foto di questo ambiente: ${l.length}`),
-      l.length ? h('div', { class: 'thumbs' }, [...l].reverse().map(f => miniatura(f, () => apriFoto(l, l.indexOf(f), ctx)))) : h('p', { class: 'hint' }, 'Nessuna foto ancora.'));
+      ...(edificio ? await corpoEdificio(l, ctx) : [
+        h('div', { class: 'lbl' }, `Foto di questo ambiente: ${l.length}`),
+        l.length ? h('div', { class: 'thumbs' }, [...l].reverse().map(f => miniatura(f, () => apriFoto(l, l.indexOf(f), ctx)))) : h('p', { class: 'hint' }, 'Nessuna foto ancora.')]));
+  }
+  async function corpoEdificio(l, ctx) {
+    const tutte = await M.fotoGeneraliEdificio(edificio);
+    const mini = it => {
+      const mia = it.immId === imm.id;
+      const b = miniatura(it.f, mia ? () => apriFoto(l, l.findIndex(x => x.id === it.f.id), ctx) : () => apriFotoSolaLettura(it));
+      b.append(h('span', { class: 'tn', style: 'left:auto;right:4px', title: mia ? 'Questa unità' : 'Altra unità: sola lettura' }, it.unita));
+      b.dataset.unita = it.unita; return b;
+    };
+    return [h('div', { class: 'lbl' }, `Foto generali dell'edificio: ${tutte.length}`),
+      tutte.length ? h('div', { class: 'thumbs' }, tutte.map(mini)) : h('p', { class: 'hint' }, 'Nessuna foto ancora.'),
+      h('p', { class: 'hint' }, 'Le nuove foto vengono salvate come foto generali di questa unità. Quelle delle altre unità si possono solo guardare.')];
   }
   await paint(); return box;
 }

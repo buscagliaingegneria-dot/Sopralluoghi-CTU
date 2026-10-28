@@ -169,6 +169,15 @@ export async function edificioDi(imm, { crea = false } = {}) {
 export const v2s = v => Array.isArray(v) ? v.join(' | ') : (v == null ? '' : String(v));
 const DEF_ED = Object.fromEntries([...ED_GROUPS, ...ED_GEN_GROUPS].flatMap(g => g.campi).map(c => [c.k, c]));
 
+// Foto generali dell'edificio: le foto non eliminate dell'ambiente A00 di ogni unità dell'edificio, nell'ordine delle unità
+// (come unitaDi) e per progressivo, ciascuna con il codice dell'unità di origine. Non cambia dove le foto sono salvate.
+export async function fotoGeneraliEdificio(ed) {
+  const out = [];
+  if (!ed) return out;
+  for (const u of await unitaDi(ed.id)) for (const f of await listFotoAmb(ambId(u.id, GENERALE.codice))) out.push({ f, unita: u.codice, immId: u.id });
+  return out;
+}
+
 // Associa l'immobile a un edificio esistente (id) o ne crea uno nuovo ('nuovo').
 // Se il precedente edificio era usato solo da questo immobile, i suoi dati compilati vengono portati
 // nei campi ancora vuoti del nuovo (i valori diversi si accodano alla nota generale) e l'edificio vuoto viene eliminato. Nessuna scheda di unità viene toccata.
