@@ -180,7 +180,16 @@ export async function associaEdificio(imm, target) {
   const dest = await DB.get('edifici', target); if (!dest) throw new Error('Edificio non trovato.');
   let copiati = 0;
   if (corrente && (await unitaDi(corrente.id)).length === 1) {
-    for (const [k, v] of Object.entries(corrente.f)) if (isFilled(v) && !isFilled(dest.f[k])) { dest.f[k] = v; copiati++; }
+    for (const [k, v] of Object.entries(corrente.f)) {
+      if (!isFilled(v)) continue;
+      if (k === 'ed_nt') { // le note non si scartano mai: se la destinazione ha già una nota, quella dell'origine si accoda con il suo codice
+        dest.f.ed_nt = isFilled(dest.f.ed_nt) ? `${dest.f.ed_nt}\n\n[da ${corrente.id}] ${v}` : v; copiati++;
+      } else if (k === 'ed_tip_alt') continue; // segue ed_tip, vedi sotto
+      else if (!isFilled(dest.f[k])) {
+        dest.f[k] = v; copiati++; // tipologia, numero di unità e gli altri campi: vince la destinazione, mai sovrascritta
+        if (k === 'ed_tip' && isFilled(corrente.f.ed_tip_alt) && !isFilled(dest.f.ed_tip_alt)) dest.f.ed_tip_alt = corrente.f.ed_tip_alt;
+      }
+    }
     if (copiati) { dest.updatedAt = Date.now(); await DB.put('edifici', dest); }
     await DB.del('edifici', corrente.id);
   }

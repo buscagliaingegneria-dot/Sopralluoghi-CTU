@@ -98,6 +98,20 @@ export const ED_GROUPS = [
   ] },
 ];
 
+// ---------- Edificio: dati generali (tipologia edilizia, numero di unità, note), facoltativi ----------
+// Gruppo a parte: si mostra per primo, ma le colonne si accodano a quelle di ED_GROUPS.
+// La tipologia edilizia non deriva dal numero di unità associate nel rilievo e non è la tipologia strutturale (str_tip).
+// "se" = il campo si mostra solo quando la funzione, applicata ai dati dell'edificio, è vera.
+export const ED_TIP = ['Villa isolata', 'Villa a schiera', 'Villa bifamiliare', 'Villa trifamiliare', 'Villa quadrifamiliare', 'Edificio condominiale o palazzina', 'Fabbricato rurale', 'Edificio commerciale o direzionale', 'Edificio produttivo', 'Altro'];
+export const ED_GEN_GROUPS = [
+  { id: 'gen', titolo: 'Generale', campi: [
+    F('ed_tip', 'Tipologia edilizia', 'chips', ED_TIP),
+    F('ed_tip_alt', 'Altra tipologia (specificare)', 'text', undefined, { h: 'Tipologia edilizia (altro)', se: f => f && f.ed_tip === 'Altro' }),
+    F('ed_nu', 'Unità immobiliari nell\'edificio', 'num', undefined, { nota: 'Dato inserito a mano: è distinto dal numero di unità associate nel rilievo.' }),
+    F('ed_nt', 'Note generali', 'area'),
+  ] },
+];
+
 // ---------- Immobile (unità): dati propri, mai condivisi con le altre unità ----------
 export const IMM_GROUPS = [
   { id: 'ril', titolo: 'Rilievo e occupazione', campi: [
@@ -188,7 +202,8 @@ export function reqMissing(groups, f) {
   return out;
 }
 export function groupCount(g, f) {
-  const tot = g.campi.length;
-  const ok = g.campi.filter(c => isFilled(f && f[c.k])).length;
+  const visibili = g.campi.filter(c => !c.se || c.se(f));
+  const tot = visibili.length;
+  const ok = visibili.filter(c => isFilled(f && f[c.k])).length;
   return [ok, tot];
 }

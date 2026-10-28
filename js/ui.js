@@ -98,9 +98,19 @@ export function campo(c, f, onChange) {
   let ctl;
   if (c.t === 'chips' || c.t === 'multi') ctl = chips(c, f, onChange);
   else if (c.t === 'area') ctl = h('textarea', { rows: 3, value: f[c.k] || '', oninput: e => { f[c.k] = e.target.value; onChange(c); } });
+  else if (c.t === 'num') {
+    // numero intero non negativo: si accettano solo cifre; il campo vuoto resta vuoto
+    ctl = h('input', { type: 'text', inputmode: 'numeric', pattern: '[0-9]*', value: isFilled(f[c.k]) ? String(f[c.k]) : '', autocomplete: 'off', oninput: e => {
+      const s = e.target.value.replace(/\D/g, '').slice(0, 6);
+      if (s !== e.target.value) e.target.value = s;
+      f[c.k] = s === '' ? '' : Number(s); onChange(c);
+    } });
+  }
   else ctl = h('input', { type: 'text', value: f[c.k] || '', autocomplete: 'off', oninput: e => { f[c.k] = e.target.value; onChange(c); } });
-  return h('div', { class: 'field' + (c.t === 'chips' || c.t === 'multi' ? ' field-chips' : '') }, lbl, ctl,
+  const el = h('div', { class: 'field' + (c.t === 'chips' || c.t === 'multi' ? ' field-chips' : '') }, lbl, ctl,
     c.nota ? h('p', { class: 'hint nota' }, c.nota) : null);
+  if (c.se) el.style.display = c.se(f) ? '' : 'none'; // solo i campi condizionati ricevono lo stile
+  return el;
 }
 
 // Gruppo a fisarmonica con contatore dei campi compilati
@@ -110,7 +120,9 @@ export function gruppo(g, f, onChange, { aperto = false } = {}) {
   const mancaReq = () => g.campi.some(c => c.req && !isFilled(f[c.k]));
   const det = h('details', { class: 'group', open: aperto ? '' : null },
     h('summary', null, h('span', { class: 'gtitle' }, g.titolo), badge),
-    h('div', { class: 'gbody' }, g.campi.map(c => campo(c, f, x => { paint(); det.classList.toggle('needs', mancaReq()); onChange(x); }))));
+    h('div', { class: 'gbody' }, g.campi.map(c => campo(c, f, x => { condizionati(); paint(); det.classList.toggle('needs', mancaReq()); onChange(x); }))));
+  // campi con "se": si mostrano o nascondono quando cambia un altro campo del gruppo (il valore nascosto non viene cancellato)
+  const condizionati = () => g.campi.forEach((c, i) => { if (c.se) det.querySelector('.gbody').children[i].style.display = c.se(f) ? '' : 'none'; });
   paint(); det.classList.toggle('needs', mancaReq());
   return det;
 }
