@@ -195,7 +195,7 @@ export async function vistaImmobile(immId, tab = 'ambienti') {
   let corpo;
   if (tab === 'dati') corpo = await tabDati(imm, onImm);
   else if (tab === 'scheda') corpo = await tabScheda(imm, ambs, ed, onImm);
-  else if (tab === 'verifica') corpo = await tabVerifica(imm, gen, onImm);
+  else if (tab === 'verifica') corpo = await tabVerifica(imm, onImm);
   else if (tab === 'foto') corpo = await tabFoto(imm, ambs, gen);
   else if (tab === 'chiusura') corpo = await tabChiusura(imm, ambs, onImm, ed);
   else corpo = await tabAmbienti(imm, ambs);
@@ -328,14 +328,12 @@ async function riportaValori(imm, ambs, onImm) {
   toast(`${n} valori riportati nella scheda generale`, 'ok'); stato.rerender();
 }
 
-async function tabVerifica(imm, gen, onImm) {
+async function tabVerifica(imm, onImm) {
   return h('div', null,
     h('section', { class: 'card' },
-      h('p', null, 'Confrontare la planimetria con lo stato dei luoghi. Per ogni difformità scattare una foto con l\'etichetta «difformità».'),
+      h('p', null, 'Confrontare la planimetria con lo stato dei luoghi. Per ogni difformità scattare, nella stanza interessata, una foto con l\'etichetta «difformità».'),
       h('button', { class: 'btn', onclick: () => apriPlanimetria(imm.id, { titolo: `${imm.codice} · planimetria` }) }, icon('plan', 18), ' Apri planimetria')),
-    ...VERIF_GROUPS.map(g => gruppo(g, imm.f, onImm, { aperto: true })),
-    h('h2', { class: 'sec' }, 'Foto delle difformità'),
-    await bloccoFoto(imm, gen, { tagIniziale: 'difformità' }));
+    ...VERIF_GROUPS.map(g => gruppo(g, imm.f, onImm, { aperto: true })));
 }
 
 async function tabAmbienti(imm, ambs) {
