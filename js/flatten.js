@@ -1,9 +1,8 @@
 // Trasforma schede e foto in righe piatte con intestazioni leggibili.
 // Le stesse righe alimentano sia il foglio Google (backup) sia i CSV dell'archivio.
 import { ANAG_FIELDS, IMM_GROUPS, ED_GROUPS, ED_GEN_GROUPS, VERIF_GROUPS, CONCL_GROUPS, AMB_GROUPS, LEGACY_AMB_GROUPS, hasLegacy } from './schema.js';
-import { nomeFoto } from './model.js';
+import { nomeFoto, v2s } from './model.js';
 
-const v2s = v => Array.isArray(v) ? v.join(' | ') : (v == null ? '' : String(v));
 const iso = ts => ts ? new Date(ts).toISOString() : '';
 const localIso = ts => { if (!ts) return ''; const d = new Date(ts); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
 // un campo condizionato ("se") non applicabile (es. «altra tipologia» senza «Altro») resta vuoto nelle colonne; il valore resta nell'archivio

@@ -1,7 +1,7 @@
 // Modello dati e operazioni sull'archivio.
 import * as DB from './db.js';
 import { slug, pad, sha256Hex, stableStringify, uid } from './util.js';
-import { AMB_GROUPS, IMM_GROUPS, ED_GROUPS, VERIF_GROUPS, CONCL_GROUPS, reqMissing, isFilled } from './schema.js';
+import { AMB_GROUPS, IMM_GROUPS, ED_GROUPS, ED_GEN_GROUPS, VERIF_GROUPS, CONCL_GROUPS, reqMissing, isFilled } from './schema.js';
 
 export const GENERALE = { codice: 'A00', nome: 'Generale (esterno, accessi, contatori)' };
 
@@ -165,9 +165,13 @@ export async function edificioDi(imm, { crea = false } = {}) {
   imm.edificio = e.id; imm.updatedAt = Date.now(); await DB.put('immobili', imm);
   return e;
 }
+// Testo di un valore come nelle colonne piatte (flatten.js lo importa da qui): serve anche a confrontare i valori per uguaglianza.
+export const v2s = v => Array.isArray(v) ? v.join(' | ') : (v == null ? '' : String(v));
+const DEF_ED = Object.fromEntries([...ED_GROUPS, ...ED_GEN_GROUPS].flatMap(g => g.campi).map(c => [c.k, c]));
+
 // Associa l'immobile a un edificio esistente (id) o ne crea uno nuovo ('nuovo').
 // Se il precedente edificio era usato solo da questo immobile, i suoi dati compilati vengono portati
-// nei campi ancora vuoti del nuovo e l'edificio vuoto viene eliminato. Nessuna scheda di unità viene toccata.
+// nei campi ancora vuoti del nuovo (i valori diversi si accodano alla nota generale) e l'edificio vuoto viene eliminato. Nessuna scheda di unità viene toccata.
 export async function associaEdificio(imm, target) {
   const corrente = imm.edificio ? await DB.get('edifici', imm.edificio) : null;
   if (target === 'nuovo') {
@@ -178,23 +182,38 @@ export async function associaEdificio(imm, target) {
   }
   if (corrente && corrente.id === target) return { copiati: 0, id: target };
   const dest = await DB.get('edifici', target); if (!dest) throw new Error('Edificio non trovato.');
-  let copiati = 0;
+  let copiati = 0, accodati = 0;
   if (corrente && (await unitaDi(corrente.id)).length === 1) {
-    for (const [k, v] of Object.entries(corrente.f)) {
-      if (!isFilled(v)) continue;
-      if (k === 'ed_nt') { // le note non si scartano mai: se la destinazione ha già una nota, quella dell'origine si accoda con il suo codice
-        dest.f.ed_nt = isFilled(dest.f.ed_nt) ? `${dest.f.ed_nt}\n\n[da ${corrente.id}] ${v}` : v; copiati++;
-      } else if (k === 'ed_tip_alt') continue; // segue ed_tip, vedi sotto
-      else if (!isFilled(dest.f[k])) {
-        dest.f[k] = v; copiati++; // tipologia, numero di unità e gli altri campi: vince la destinazione, mai sovrascritta
-        if (k === 'ed_tip' && isFilled(corrente.f.ed_tip_alt) && !isFilled(dest.f.ed_tip_alt)) dest.f.ed_tip_alt = corrente.f.ed_tip_alt;
-      }
+    // Regole: la destinazione non viene mai sovrascritta. Un campo compilato nell'origine passa solo se nella destinazione è vuoto.
+    // Se invece è compilato con un valore diverso (confronto come nelle colonne piatte, v2s), il valore dell'origine non si perde:
+    // finisce in una riga della nota generale ("[da EDI-xx] Etichetta: valore"). Valori uguali e vuoti non si accodano.
+    const riga = (k, v) => `[da ${corrente.id}] ${(DEF_ED[k] && DEF_ED[k].l) || k}: ${v2s(v)}`;
+    const scartati = [];
+    for (const k of Object.keys(corrente.f)) {
+      const v = corrente.f[k];
+      if (k === 'ed_nt' || k === 'ed_tip_alt' || !isFilled(v)) continue;
+      if (!isFilled(dest.f[k])) { dest.f[k] = v; copiati++; }
+      else if (v2s(dest.f[k]) !== v2s(v)) scartati.push(riga(k, v));
     }
-    if (copiati) { dest.updatedAt = Date.now(); await DB.put('edifici', dest); }
+    const alt = corrente.f.ed_tip_alt; // l'altra tipologia segue la tipologia (valutata dopo di essa)
+    if (isFilled(alt)) {
+      const applicabile = DEF_ED.ed_tip_alt.se(corrente.f);
+      if (!isFilled(dest.f.ed_tip_alt)) {
+        dest.f.ed_tip_alt = alt; copiati++;
+        if (applicabile && dest.f.ed_tip !== 'Altro') scartati.push(riga('ed_tip_alt', alt)); // la destinazione non la mostrerebbe
+      } else if (v2s(dest.f.ed_tip_alt) !== v2s(alt)) scartati.push(riga('ed_tip_alt', alt));
+    }
+    // note: la nota dell'origine (con il suo codice se la destinazione ne ha già una), poi le righe dei valori non copiati
+    let nota = dest.f.ed_nt; let notaCambiata = false;
+    const aggiungi = blocco => { nota = isFilled(nota) ? `${nota}\n\n${blocco}` : blocco; notaCambiata = true; };
+    if (isFilled(corrente.f.ed_nt)) { aggiungi(isFilled(nota) ? `[da ${corrente.id}] ${corrente.f.ed_nt}` : corrente.f.ed_nt); copiati++; }
+    if (scartati.length) { aggiungi(scartati.join('\n')); accodati = scartati.length; }
+    if (notaCambiata) dest.f.ed_nt = nota;
+    if (copiati || accodati) { dest.updatedAt = Date.now(); await DB.put('edifici', dest); }
     await DB.del('edifici', corrente.id);
   }
   imm.edificio = dest.id; imm.updatedAt = Date.now(); await DB.put('immobili', imm);
-  return { copiati, id: dest.id };
+  return { copiati, accodati, id: dest.id };
 }
 
 // ---------- Impronte per il backup ----------
