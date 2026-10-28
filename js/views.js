@@ -241,7 +241,7 @@ async function aggiungiDocs(imm, tipo, input) {
 // ---------------------------------------------------------------- SCHEDA GENERALE E EDIFICIO
 const numeriParticelle = a => new Set((String(a && a.particella || '').match(/\d+/g) || []));
 // confronto di comune e foglio senza distinguere maiuscole e spazi iniziali e finali (i dati salvati non cambiano)
-const pari = (x, y) => String(x || '').trim().toLowerCase() === String(y || '').trim().toLowerCase();
+const pari = (x, y) => { const a = String(x || '').trim().toLowerCase(), b = String(y || '').trim().toLowerCase(); return a !== '' && b !== '' && a === b; };
 
 async function sceltaEdificio(imm) {
   const tutti = await M.listEd(); const mie = numeriParticelle(imm.anag);
