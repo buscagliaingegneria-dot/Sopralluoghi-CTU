@@ -23,6 +23,7 @@ async function route() {
   await scaricaSalvataggi();
   const hash = location.hash || '#/';
   let el, m;
+  V.rilasciaUrl(); // gli URL della schermata precedente si liberano prima di costruire la nuova, i cui URL devono restare validi
   try {
     if ((m = hash.match(/^#\/i\/([^/]+)\/a\/([^/]+)$/))) el = await V.vistaAmbiente(dec(m[1]), dec(m[2]));
     else if ((m = hash.match(/^#\/i\/([^/]+?)(?:\/(dati|scheda|verifica|ambienti|foto|chiusura))?$/))) el = await V.vistaImmobile(dec(m[1]), m[2] || 'ambienti');
@@ -32,7 +33,6 @@ async function route() {
   } catch (e) { el = vistaErrore(e); }
   if (mia !== generazione) return;
   document.getElementById('overlay-root').replaceChildren();
-  V.rilasciaUrl();
   app.replaceChildren(el);
   window.scrollTo(0, 0);
   try { await DB.setMeta('lastRoute', { hash, at: Date.now() }); } catch { /* non critico */ }
