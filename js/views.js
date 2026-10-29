@@ -9,6 +9,7 @@ import { parseProgramma } from './programma.js';
 import { prepareFile, getPosition } from './photo.js';
 import { apriPlanimetria, apriFoto, apriDocumento } from './viewers.js';
 import { esportaArchivio } from './export.js';
+import { importaArchivio } from './archivio.js';
 import { espandi, abbina, riepilogo as riepDoc, importa as importaDoc } from './bulk.js';
 import { riepilogo, condizioni, eseguiBackup, testConnessione } from './backup.js';
 import { APP_VERSION } from './version.js';
@@ -25,6 +26,7 @@ export async function vistaHome() {
   const lastBk = await DB.getMeta('lastBackup', null);
   const server = await DB.getMeta('server', null);
   const inFile = h('input', { type: 'file', accept: '.csv,.json,.txt,text/csv,application/json,text/plain', hidden: true, onchange: e => importaProgramma(e.target.files[0], e.target) });
+  const inZip = h('input', { type: 'file', accept: '.zip,application/zip,application/x-zip-compressed', hidden: true, onchange: e => importaArchivioZip(e.target.files[0], e.target) });
   const inDoc = h('input', { type: 'file', multiple: true, accept: 'image/*,application/pdf,.pdf,.zip,application/zip,application/x-zip-compressed', hidden: true, onchange: e => importaDocumenti(e.target.files, e.target) });
 
   const stat = h('section', { class: 'card status' },
@@ -67,6 +69,9 @@ export async function vistaHome() {
         h('button', { class: 'btn', onclick: () => aggiungiImmobile() }, icon('plus', 18), ' Aggiungi immobile'),
         h('button', { class: 'btn', onclick: () => inFile.click() }, icon('file', 18), ' Importa programma'),
         inFile),
+      h('div', { class: 'actions' },
+        h('button', { class: 'btn', onclick: () => inZip.click() }, icon('download', 18), ' Importa archivio (ZIP)'),
+        inZip),
       h('div', { class: 'actions' },
         h('button', { class: 'btn', disabled: !righe.length, onclick: () => inDoc.click() }, icon('plan', 18), ' Importa planimetrie e visure (in blocco)'),
         inDoc),
@@ -121,6 +126,11 @@ async function importaDocumenti(fileList, input) {
     toast(`Documenti importati: ${r.nuovi} nuovi${r.sostituiti ? ', ' + r.sostituiti + ' sostituiti' : ''}.`, 'ok');
     stato.rerender();
   } catch (e) { toast(e.message, 'err'); await infoDialog({ title: 'Importazione non riuscita', body: e.message }); }
+}
+
+async function importaArchivioZip(file, input) {
+  input.value = '';
+  if (await importaArchivio(file)) { location.hash = '#/'; stato.rerender(); }
 }
 
 async function importaProgramma(file, input) {

@@ -36,7 +36,9 @@ export async function unzipFile(file) {
       blob = await new Response(raw.stream().pipeThrough(new DecompressionStream('deflate-raw'))).blob();
     } else throw new Error(`metodo di compressione ${method} non supportato`);
     const base = name.split('/').pop();
-    out.push(new File([blob], base, { type: mimeDa(base) }));
+    const f = new File([blob], base, { type: mimeDa(base) });
+    f.percorso = name; // percorso completo nello ZIP (serve a importaArchivio, che abbina i file per cartella)
+    out.push(f);
   }
   return out;
 }
