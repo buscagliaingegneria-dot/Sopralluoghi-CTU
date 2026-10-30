@@ -12,9 +12,16 @@ const valoriDi = (ambienti, da) => {
   const vals = [];
   for (const am of ambienti) {
     const v = am.f && am.f[da]; if (!isFilled(v)) continue;
-    (Array.isArray(v) ? v : [v]).forEach(x => vals.push(x));
+    (Array.isArray(v) ? v : [v]).forEach(x => vals.push({ v: x, cod: am.codice }));
   }
   return vals;
+};
+
+// Raggruppa i valori con i codici delle stanze in cui compaiono (stesso ordine di prima comparsa).
+const stanzePerValore = vals => {
+  const m = new Map();
+  for (const { v, cod } of vals) { if (!m.has(v)) m.set(v, []); if (!m.get(v).includes(cod)) m.get(v).push(cod); }
+  return [...m].map(([valore, stanze]) => ({ valore, stanze }));
 };
 
 export function anteprimaRiporto(imm, ambs) {
@@ -29,10 +36,11 @@ export function anteprimaRiporto(imm, ambs) {
     if (!valsA00.length && !valsStanze.length) continue;
     if (isFilled(imm.f[a])) { ris.giaPresenti.push({ k: a, l: def.l }); continue; }
     const origine = valsA00.length ? 'A00' : 'stanze';
-    const dist = [...new Set(valsA00.length ? valsA00 : valsStanze)];
+    const fonte = valsA00.length ? valsA00 : valsStanze;
+    const dist = [...new Set(fonte.map(x => x.v))];
     if (def.t === 'multi') ris.applicabili.push({ k: a, l: def.l, v: dist, origine });
     else if (dist.length === 1) ris.applicabili.push({ k: a, l: def.l, v: dist[0], origine });
-    else ris.conflitti.push({ k: a, l: def.l, valori: dist, origine });
+    else ris.conflitti.push({ k: a, l: def.l, valori: dist, dettaglio: stanzePerValore(fonte), origine });
   }
   ris.daA00 = ris.applicabili.filter(x => x.origine === 'A00').length;
   if (ris.daA00) ris.ambientiConDati++; // A00 conta tra gli ambienti con dati solo quando contribuisce con almeno un campo riportabile

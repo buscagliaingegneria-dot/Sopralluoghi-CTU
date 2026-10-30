@@ -375,7 +375,8 @@ async function riportaValori(imm, ambs, onImm) {
     rip.daA00 ? h('p', { class: 'hint' }, 'Per ogni campo vale prima il valore dell\'ambiente A00 (Generale); le altre stanze si confrontano solo sui campi che A00 lascia vuoti. Gli altri dati di A00 (umidità, degrado, giudizio, note) non si riportano e restano nella scheda «versione precedente».') : null,
     rip.applicabili.length ? h('ul', { class: 'plainlist', style: 'max-height:26vh;overflow:auto' }, rip.applicabili.map(x => h('li', null, h('b', null, x.l + ': '), val(x.v), h('span', { class: 'hint' }, x.origine === 'A00' ? ' — da A00' : ' — dalle stanze')))) : null,
     rip.conflitti.length ? h('div', null, h('p', { class: 'modal-text' }, `Valori diversi da una stanza all'altra (${rip.conflitti.length}): non vengono riportati, vanno scelti a mano.`),
-      h('ul', { class: 'plainlist miss', style: 'max-height:20vh;overflow:auto' }, rip.conflitti.map(x => h('li', null, h('b', null, x.l + ': '), x.valori.join(' / '))))) : null,
+      h('ul', { class: 'plainlist miss', style: 'max-height:20vh;overflow:auto' }, rip.conflitti.map(x => h('li', null, h('b', null, x.l + ': '),
+        x.dettaglio.map(d => `${d.valore} (${d.stanze.join(', ')})`).join(' / '))))) : null,
     rip.giaPresenti.length ? h('div', null, h('p', { class: 'modal-text' }, `Campi già compilati, che restano invariati (${rip.giaPresenti.length}):`),
       h('ul', { class: 'plainlist', style: 'max-height:20vh;overflow:auto' }, rip.giaPresenti.map(x => h('li', null, x.l)))) : null);
   const ok = await modal({ title: 'Riportare i valori comuni?', body: corpo, actions: [{ label: 'Annulla', value: false }, { label: 'Riporta', value: true, kind: 'primary' }] });
